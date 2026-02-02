@@ -157,6 +157,12 @@ pplx search "query" --curl
 3. Search commands use these cookies to authenticate against Perplexity's SSE API
 4. Labs commands use WebSocket (Socket.IO) — no auth needed
 
+## Acknowledgements
+
+This project was inspired by and built upon the reverse-engineering work in [helallao/perplexity-ai](https://github.com/helallao/perplexity-ai) — a Python library for the Perplexity AI API. The authentication flow, SSE protocol handling, and API structure were all derived from studying that project. Big thanks to [@helallao](https://github.com/helallao) for figuring out the hard parts.
+
+`pplx-cli` is a ground-up Node.js reimplementation for CLI/agentic use cases, but it wouldn't exist without that foundational work.
+
 ## License
 
 MIT
