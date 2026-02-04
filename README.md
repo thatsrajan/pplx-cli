@@ -11,6 +11,13 @@ CLI for Perplexity AI with cookie-based authentication. Designed for headless/ag
 ## Installation
 
 ```bash
+npm install -g pplx-npx-search
+
+# or run once without installing
+npx pplx-npx-search search "what is quantum computing"
+```
+
+```bash
 git clone https://github.com/rajanrengasamy/pplx-cli.git
 cd pplx-cli
 npm install

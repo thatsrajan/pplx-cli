@@ -55,7 +55,7 @@ async function resolveQuery(queryArg) {
 program
   .name('pplx')
   .description('CLI for Perplexity AI')
-  .version('0.1.0');
+  .version('0.1.1');
 
 program.option('--verbose', 'Enable verbose logging');
 program.option('--proxy <url>', 'Set proxy URL (sets HTTPS_PROXY env var)');
