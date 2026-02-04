@@ -145,9 +145,11 @@ export class ChromeBridge {
     `, false); // Don't await — let it run in background
 
     // Poll for chunks
+    const deadline = Date.now() + (fetchOpts.timeout ?? 120000);
     await new Promise(r => setTimeout(r, 200)); // Give it a moment to start
     try {
       while (true) {
+        if (Date.now() > deadline) throw new Error('SSE polling timeout');
         const stateJson = await this.evaluate(`
           (() => {
             const s = window['${storeId}'];

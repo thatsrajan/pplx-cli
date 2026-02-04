@@ -1,0 +1,49 @@
+Refactor this pplx-cli Node.js project for headless/agent-first usage. Currently search.js uses ChromeBridge (CDP) which requires a running Chrome browser. This needs to work with just stored cookies for AI agents and CLI automation.
+
+PHASE 1: Fix search path
+
+1. src/search.js — Rewrite to use direct HTTP/SSE fetch with cookies as the DEFAULT path. The cookies come from ~/.config/pplx/cookies.json (loaded via cookies.js). Use session.js initSession() to get a valid session, then make SSE requests to Perplexity's API. Use eventsource-parser to parse the SSE stream. Keep the same generator interface async function* search(query, cookies, opts). ChromeBridge should only be used if opts.chrome is true.
+
+2. src/http.js — Fix bug on line ~64: -L flag is INVERTED. When opts.redirect === 'manual', do NOT add -L (that follows redirects). When redirect is NOT manual, add -L. Also make the curl path async where possible.
+
+3. src/chrome-bridge.js — Don't change it, but it should only be imported/used when --chrome flag is passed.
+
+PHASE 2: CLI ergonomics for agents
+
+4. src/cli.js — Add these changes:
+   - TTY detection: if !process.stdout.isTTY, auto-disable spinner (ora noop) and chalk colors
+   - Add --raw global flag: plain text, no colors, no spinner, just the answer
+   - Add --chrome flag to search command: use ChromeBridge instead of HTTP (optional)
+   - Stdin support: if query is - or no query arg and stdin is piped (!process.stdin.isTTY), read query from stdin
+   - Add .catch() on program.parseAsync() at the bottom for clean error handling
+   - --json on search should output a single final JSON object: {answer, sources, query, mode, model} not every SSE event
+
+5. Non-zero exit code when answer is empty.
+
+PHASE 3: Cleanup
+
+6. src/format.js — Remove formatAnswer and streamToken functions (dead code, never called). Keep formatSources.
+
+7. src/labs.js — Fix the race condition: replace the single resolveMessage callback with a proper message queue pattern. Use an array queue + a waiter promise.
+
+8. package.json — Remove marked and marked-terminal from dependencies (dead). Add: author Rajan Rengasamy, repository {type: git, url: https://github.com/rajanrengasamy/pplx-cli}, files: [bin, src, README.md, LICENSE]
+
+9. Create a LICENSE file with MIT license, copyright Rajan Rengasamy 2026.
+
+10. README.md — Update to reflect the new architecture:
+    - Default mode is headless (cookies), Chrome is optional via --chrome
+    - Add Agent/Automation Usage section showing: pplx search "query" --raw, echo "query" | pplx search -, pplx search "query" --json
+    - Add Acknowledgements section: This project was inspired by and built upon the reverse-engineering work in helallao/perplexity-ai (https://github.com/helallao/perplexity-ai) — a Python library for the Perplexity AI API. The authentication flow, SSE protocol handling, and API structure were all derived from studying that project. Big thanks to @helallao for figuring out the hard parts. pplx-cli is a ground-up Node.js reimplementation for CLI/agentic use cases, but it wouldn't exist without that foundational work.
+
+PHASE 4: Test - After making all changes, run these tests:
+- node bin/pplx.js --help
+- node bin/pplx.js models
+- node bin/pplx.js auth --test
+- echo "what is 2+2" | node bin/pplx.js search -
+
+IMPORTANT CONSTRAINTS:
+- Keep ES modules (type: module)
+- Keep the async generator pattern for search
+- Don't break labs.js WebSocket flow
+- Don't remove config.js or retry.js
+- The SSE endpoint for Perplexity search is POST to https://www.perplexity.ai/socket.io/?EIO=4&transport=polling for session init, then SSE streaming. Study the existing session.js to understand the protocol.

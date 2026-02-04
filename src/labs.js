@@ -1,36 +1,57 @@
 import WebSocket from 'ws';
 import { HEADERS, BASE_URL } from './constants.js';
 
+export function parseEngineIO(text) {
+  const match = text.match(/^(\d+):(.+)$/s);
+  const payload = match ? match[2] : text;
+  const braceIdx = payload.indexOf('{');
+  if (braceIdx === -1) throw new Error('No JSON found in Engine.IO response');
+  return JSON.parse(payload.slice(braceIdx));
+}
+
 export class LabsClient {
   constructor() {
     this.ws = null;
     this.sid = null;
     this.history = [];
-    this.resolveMessage = null;
     this.cookies = '';
+    // Message queue pattern to avoid race condition
+    this._queue = [];
+    this._waiter = null;
+  }
+
+  _pushMessage(msg) {
+    if (this._waiter) {
+      const resolve = this._waiter;
+      this._waiter = null;
+      resolve(msg);
+    } else {
+      this._queue.push(msg);
+    }
+  }
+
+  _nextMessage() {
+    if (this._queue.length > 0) {
+      return Promise.resolve(this._queue.shift());
+    }
+    return new Promise((resolve) => { this._waiter = resolve; });
   }
 
   async connect() {
     const t = Math.random().toString(16).slice(2, 10);
 
-    // Step 1: Polling handshake (REVIEW issue #3: handle length-prefixed format)
     const pollUrl = `${BASE_URL}/socket.io/?EIO=4&transport=polling&t=${t}`;
     const pollResp = await fetch(pollUrl, {
       headers: { 'user-agent': HEADERS['user-agent'] },
     });
     const pollText = await pollResp.text();
 
-    // Find first '{' to handle length prefix
-    const braceIdx = pollText.indexOf('{');
-    if (braceIdx === -1) throw new Error('Invalid polling response: ' + pollText.slice(0, 200));
-    const handshake = JSON.parse(pollText.slice(braceIdx));
+    const handshake = parseEngineIO(pollText);
     this.sid = handshake.sid;
 
-    // Collect cookies (REVIEW issue #4: use getSetCookie array)
     const setCookies = pollResp.headers.getSetCookie?.() ?? [];
     this.cookies = setCookies.map(c => c.split(';')[0]).join('; ');
 
-    // Step 2: Auth via polling
     const t2 = Math.random().toString(16).slice(2, 10);
     const authUrl = `${BASE_URL}/socket.io/?EIO=4&transport=polling&t=${t2}&sid=${this.sid}`;
     const authResp = await fetch(authUrl, {
@@ -45,7 +66,6 @@ export class LabsClient {
     const authText = await authResp.text();
     if (authResp.status !== 200) throw new Error('Auth failed: ' + authText);
 
-    // Step 3: WebSocket upgrade
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(
         `wss://www.perplexity.ai/socket.io/?EIO=4&transport=websocket&sid=${this.sid}`,
@@ -61,12 +81,12 @@ export class LabsClient {
       this.ws.on('message', (raw) => {
         const msg = raw.toString();
         if (msg === '2') { this.ws.send('3'); return; }
-        if (msg === '3probe') return; // probe response
+        if (msg === '3probe') return;
         if (msg.startsWith('42')) {
           try {
             const parsed = JSON.parse(msg.slice(2));
             if (Array.isArray(parsed) && parsed.length >= 2) {
-              this.resolveMessage?.(parsed[1]);
+              this._pushMessage(parsed[1]);
             }
           } catch (e) {
             if (process.env.PPLX_VERBOSE) console.error('WS parse error:', e.message);
@@ -93,7 +113,7 @@ export class LabsClient {
     ]));
 
     while (true) {
-      const data = await new Promise(r => { this.resolveMessage = r; });
+      const data = await this._nextMessage();
       yield data;
       if (data.final) {
         this.history.push({ role: 'assistant', content: data.output, priority: 0 });

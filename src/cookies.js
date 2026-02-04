@@ -20,12 +20,43 @@ export function saveCookies(cookies) {
   writeFileSync(COOKIES_FILE, JSON.stringify(cookies, null, 2));
 }
 
+function getChromeDir(profile) {
+  const platform = process.platform;
+  if (platform === 'darwin') {
+    return join(homedir(), 'Library/Application Support/Google/Chrome', profile);
+  } else if (platform === 'linux') {
+    return join(homedir(), '.config/google-chrome', profile);
+  }
+  throw new Error(`Unsupported platform: ${platform}. Only macOS and Linux are supported.`);
+}
+
 function getChromeKey() {
-  const raw = execSync(
-    'security find-generic-password -w -s "Chrome Safe Storage" -a "Chrome"',
-    { encoding: 'utf-8' }
-  ).trim();
-  return crypto.pbkdf2Sync(raw, 'saltysalt', 1003, 16, 'sha1');
+  if (process.platform === 'linux') {
+    return crypto.pbkdf2Sync('peanuts', 'saltysalt', 1, 16, 'sha1');
+  }
+  // macOS: Keychain
+  const accounts = ['Chrome', 'Google Chrome'];
+  let lastErr = null;
+  for (const account of accounts) {
+    try {
+      const raw = execSync(
+        `security find-generic-password -w -s "Chrome Safe Storage" -a "${account}"`,
+        { encoding: 'utf-8' }
+      ).trim();
+      if (raw) {
+        return crypto.pbkdf2Sync(raw, 'saltysalt', 1003, 16, 'sha1');
+      }
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  const error = new Error(
+    'Keychain access denied for "Chrome Safe Storage". Run: ' +
+    'security find-generic-password -w -s "Chrome Safe Storage" -a "Chrome" ' +
+    '(or -a "Google Chrome") and allow access.'
+  );
+  if (lastErr) error.cause = lastErr;
+  throw error;
 }
 
 function decryptValue(encrypted, key) {
@@ -60,7 +91,7 @@ function decryptValue(encrypted, key) {
 }
 
 export function extractFromChrome(profile = 'Default') {
-  const chromeDir = join(homedir(), 'Library/Application Support/Google/Chrome', profile);
+  const chromeDir = getChromeDir(profile);
   const cookieDb = join(chromeDir, 'Cookies');
 
   if (!existsSync(cookieDb)) {

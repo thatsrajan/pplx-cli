@@ -1,3 +1,6 @@
+import { homedir } from 'os';
+import { join } from 'path';
+
 export const BASE_URL = 'https://www.perplexity.ai';
 
 export const HEADERS = {
@@ -38,5 +41,5 @@ export const MODEL_MAP = {
 
 export const LABS_MODELS = ['r1-1776', 'sonar-pro', 'sonar', 'sonar-reasoning-pro', 'sonar-reasoning'];
 
-export const CONFIG_DIR = `${process.env.HOME}/.config/pplx`;
-export const COOKIES_FILE = `${CONFIG_DIR}/cookies.json`;
+export const CONFIG_DIR = join(homedir(), '.config', 'pplx');
+export const COOKIES_FILE = join(CONFIG_DIR, 'cookies.json');
