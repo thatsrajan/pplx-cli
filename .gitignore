@@ -1,5 +1,14 @@
 node_modules/
-*.db
 .DS_Store
-node_modules/
+*.db
+*.db-wal
+*.db-shm
+
+# Local config / extracted cookies. The CLI stores these in
+# ~/.config/pplx/cookies.json by default, but defensively ignore any copy
+# that ends up inside the repo.
 .config/
+cookies.json
+pplx-cookies-*.db
+.env
+.env.local

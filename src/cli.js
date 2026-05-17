@@ -1,7 +1,7 @@
 import { program } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
-import { extractFromChrome, loadCookies, saveCookies, cookieHeader } from './cookies.js';
+import { extractFromChrome, loadCookies, saveCookies, SUPPORTED_BROWSERS } from './cookies.js';
 import { extractFromPlaywright } from './playwright-auth.js';
 import { initSession, testAuth } from './session.js';
 import { search } from './search.js';
@@ -24,6 +24,15 @@ function makeSpinner(text) {
     return { start() { return this; }, stop() {}, succeed() {}, fail() {}, text: '' };
   }
   return ora(text);
+}
+
+function finishSuccess(spinner, message) {
+  if (isQuiet()) {
+    spinner.stop();
+    console.log(chalk.green(`✓ ${message}`));
+    return;
+  }
+  spinner.succeed(message);
 }
 
 // --- Stdin helper ---
@@ -49,6 +58,26 @@ async function resolveQuery(queryArg) {
   }
   console.error('Error: no query provided');
   process.exit(1);
+}
+
+async function extractAndValidateBrowser(browser, profile) {
+  const cookies = extractFromChrome(profile, browser);
+  const count = Object.keys(cookies).length;
+  const hasSession = Boolean(cookies['next-auth.session-token'] || cookies['__Secure-next-auth.session-token']);
+  if (!hasSession) {
+    return { browser, profile, cookies, count, hasSession, ok: false };
+  }
+
+  const session = await initSession(cookies);
+  return {
+    browser,
+    profile,
+    cookies: session.cookies,
+    count: Object.keys(session.cookies).length,
+    hasSession,
+    ok: session.ok,
+    status: session.status,
+  };
 }
 
 // --- Program setup ---
@@ -77,14 +106,15 @@ program.hook('preAction', (thisCmd) => {
 // Auth command
 program
   .command('auth')
-  .description('Extract and manage cookies from Chrome')
+  .description('Extract and manage cookies from supported browsers')
   .option('--test', 'Test if stored cookies are valid')
   .option('--profile <name>', 'Chrome profile', 'Default')
+  .option('--browser <name>', `Browser store: auto, ${SUPPORTED_BROWSERS.join(', ')}`, 'auto')
   .option('--playwright', 'Use Playwright to login and extract cookies')
   .option('--headless', 'Run Playwright in headless mode (not recommended for login)')
   .action(async (opts) => {
     const cfg = loadConfig();
-    const usePlaywright = opts.playwright ?? cfg.playwright;
+    const usePlaywright = opts.playwright === true;
     const playwrightHeadless = opts.headless ?? cfg.playwrightHeadless ?? false;
 
     if (opts.test) {
@@ -98,6 +128,9 @@ program
         const ok = await testAuth(cookies);
         spinner.stop();
         console.log(ok ? chalk.green('✓ Cookies are valid') : chalk.red('✗ Cookies are invalid or expired'));
+        if (!ok) {
+          console.log(chalk.dim('  Run: pplx auth --browser auto'));
+        }
         process.exit(ok ? 0 : 1);
       } catch (e) {
         spinner.stop();
@@ -125,11 +158,14 @@ program
           return;
         }
 
-        const { cookies: refreshed } = await initSession(cookies);
+        const { cookies: refreshed, ok } = await initSession(cookies);
+        if (!ok) {
+          console.log(chalk.red('✗ Login cookies were extracted but are not authenticated.'));
+          console.log(chalk.dim('  Try again after logging into Perplexity in the Playwright browser.'));
+          process.exit(1);
+        }
         saveCookies(refreshed);
         console.log(chalk.green(`✓ Extracted ${Object.keys(refreshed).length} cookies and saved to ~/.config/pplx/cookies.json`));
-        const token = refreshed['__Secure-next-auth.session-token'] || refreshed['next-auth.session-token'];
-        console.log(chalk.dim(`  Session token: ${token?.slice(0, 20)}...`));
         return;
       } catch (e) {
         spinner.stop();
@@ -141,7 +177,39 @@ program
 
     const spinner = makeSpinner('Extracting cookies from Chrome...').start();
     try {
-      const cookies = extractFromChrome(opts.profile);
+      const attempts = [];
+      let result = null;
+
+      if (opts.browser === 'auto') {
+        for (const browser of SUPPORTED_BROWSERS) {
+          try {
+            const attempt = await extractAndValidateBrowser(browser, opts.profile);
+            attempts.push(attempt);
+            if (attempt.ok) {
+              result = attempt;
+              break;
+            }
+          } catch (e) {
+            attempts.push({
+              browser,
+              profile: opts.profile,
+              count: 0,
+              hasSession: false,
+              ok: false,
+              error: e.message,
+            });
+          }
+        }
+      } else {
+        result = await extractAndValidateBrowser(opts.browser, opts.profile);
+        attempts.push(result);
+      }
+
+      if (!result) {
+        result = { browser: opts.browser, profile: opts.profile, cookies: {}, count: 0, hasSession: false, ok: false };
+      }
+
+      const cookies = result.cookies;
       const count = Object.keys(cookies).length;
       spinner.text = `Found ${count} cookies. Testing auth...`;
 
@@ -149,20 +217,33 @@ program
       if (!hasSession) {
         spinner.stop();
         console.log(chalk.yellow(`⚠ Found ${count} cookies but no session token.`));
-        console.log('  Make sure you are logged into perplexity.ai in Chrome.');
-        if (count > 0) {
-          saveCookies(cookies);
-          console.log(chalk.dim('  Saved cookies anyway.'));
+        console.log('  Make sure you are logged into perplexity.ai in a supported browser.');
+        if (attempts.length) {
+          for (const attempt of attempts) {
+            const suffix = attempt.error ? ` (${attempt.error.split('\n')[0]})` : '';
+            console.log(chalk.dim(`  - ${attempt.browser}: ${attempt.count} cookies${suffix}`));
+          }
         }
+        console.log(chalk.dim('  Existing cookie file was left unchanged.'));
         return;
       }
 
-      const { cookies: refreshed } = await initSession(cookies);
-      saveCookies(refreshed);
-      spinner.succeed(`Extracted ${Object.keys(refreshed).length} cookies and saved to ~/.config/pplx/cookies.json`);
+      if (!result.ok) {
+        spinner.stop();
+        console.log(chalk.red(`✗ Found ${count} cookies in ${result.browser}, but they are invalid or expired.`));
+        if (attempts.length) {
+          for (const attempt of attempts) {
+            const status = attempt.ok ? 'valid' : (attempt.hasSession ? 'expired' : 'no session');
+            const suffix = attempt.error ? ` (${attempt.error.split('\n')[0]})` : '';
+            console.log(chalk.dim(`  - ${attempt.browser}: ${attempt.count} cookies, ${status}${suffix}`));
+          }
+        }
+        console.log(chalk.dim('  Existing cookie file was left unchanged.'));
+        process.exit(1);
+      }
 
-      const token = refreshed['__Secure-next-auth.session-token'] || refreshed['next-auth.session-token'];
-      console.log(chalk.dim(`  Session token: ${token?.slice(0, 20)}...`));
+      saveCookies(cookies);
+      finishSuccess(spinner, `Extracted ${Object.keys(cookies).length} cookies from ${result.browser} and saved to ~/.config/pplx/cookies.json`);
     } catch (e) {
       spinner.fail('Failed to extract cookies');
       console.error(chalk.red(e.message));
@@ -179,10 +260,17 @@ async function doSearch(query, opts) {
   opts = { ...cfg, ...opts };
   if (opts.curl) setUseCurl(true);
 
-  const cookies = loadCookies();
-  if (!cookies) {
+  const cookies = loadCookies() || {};
+  if (!opts.chrome && Object.keys(cookies).length === 0) {
     console.error(chalk.red('No cookies. Run: pplx auth'));
     process.exit(1);
+  }
+  if (!opts.chrome && !opts.allowAnonymous) {
+    const ok = await testAuth(cookies);
+    if (!ok) {
+      console.error(chalk.red('Stored cookies are invalid or expired. Run: pplx auth --browser auto'));
+      process.exit(1);
+    }
   }
 
   const mode = opts.mode || 'pro';
@@ -272,6 +360,8 @@ program
   .option('--curl', 'Force curl-impersonate for TLS')
   .option('--chrome', 'Use Chrome CDP bridge instead of HTTP')
   .option('--playwright', 'Use Playwright headless Chromium instead of HTTP')
+  .option('--no-playwright', 'Disable Playwright even if config enables it')
+  .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired')
   .action(async (queryArg, opts) => {
     if (opts.raw) { rawMode = true; chalk.level = 0; }
     const query = await resolveQuery(queryArg);
@@ -287,6 +377,8 @@ program
   .option('--curl', 'Force curl-impersonate')
   .option('--chrome', 'Use Chrome CDP bridge')
   .option('--playwright', 'Use Playwright headless Chromium')
+  .option('--no-playwright', 'Disable Playwright even if config enables it')
+  .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired')
   .action(async (queryArg, opts) => {
     const query = await resolveQuery(queryArg);
     await doSearch(query, { ...opts, mode: 'reasoning' });
@@ -300,6 +392,8 @@ program
   .option('--curl', 'Force curl-impersonate')
   .option('--chrome', 'Use Chrome CDP bridge')
   .option('--playwright', 'Use Playwright headless Chromium')
+  .option('--no-playwright', 'Disable Playwright even if config enables it')
+  .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired')
   .action(async (queryArg, opts) => {
     const query = await resolveQuery(queryArg);
     const spinner = makeSpinner('Deep research in progress...').start();

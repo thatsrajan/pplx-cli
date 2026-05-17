@@ -3,10 +3,28 @@ import { cookieHeader } from './cookies.js';
 import { request } from './http.js';
 import { withRetry } from './retry.js';
 
+function parseSessionPayload(text) {
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
+export function isAuthenticatedSession(session) {
+  return Boolean(
+    session?.user?.email ||
+    session?.user?.id ||
+    session?.user?.name
+  );
+}
+
 export async function initSession(cookies) {
   const resp = await withRetry(() => request(`${BASE_URL}/api/auth/session`, {
     headers: {
       ...HEADERS,
+      accept: 'application/json',
       cookie: cookieHeader(cookies),
     },
     redirect: 'manual',
@@ -22,10 +40,18 @@ export async function initSession(cookies) {
     }
   }
 
-  return { cookies, status: resp.status, ok: resp.ok };
+  const text = await resp.text();
+  const session = parseSessionPayload(text);
+
+  return {
+    cookies,
+    status: resp.status,
+    ok: resp.ok && isAuthenticatedSession(session),
+    session,
+  };
 }
 
 export async function testAuth(cookies) {
-  const { status } = await initSession(cookies);
-  return status === 200;
+  const { ok } = await initSession(cookies);
+  return ok;
 }

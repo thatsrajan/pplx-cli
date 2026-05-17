@@ -1,7 +1,7 @@
 {
   "name": "pplx-npx-search",
-  "version": "0.1.1",
-  "description": "CLI for Perplexity AI with cookie-based auth",
+  "version": "0.2.1",
+  "description": "CLI for Perplexity AI with cookie-based auth. Headless, agent-friendly, no API key required.",
   "type": "module",
   "bin": {
     "pplx": "./bin/pplx.js"
@@ -20,12 +20,17 @@
   "author": "Rajan Rengasamy",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rajanrengasamy/pplx-cli"
+    "url": "git+https://github.com/thatsrajan/pplx-cli.git"
   },
+  "bugs": {
+    "url": "https://github.com/thatsrajan/pplx-cli/issues"
+  },
+  "homepage": "https://github.com/thatsrajan/pplx-cli#readme",
   "files": [
     "bin",
     "src",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "engines": {
