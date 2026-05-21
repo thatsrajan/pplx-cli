@@ -1,6 +1,6 @@
 {
   "name": "pplx-npx-search",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "CLI for Perplexity AI with cookie-based auth. Headless, agent-friendly, no API key required.",
   "type": "module",
   "bin": {

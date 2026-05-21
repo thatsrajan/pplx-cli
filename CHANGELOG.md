@@ -5,6 +5,15 @@ All notable changes to pplx-cli will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-05-21
+
+### Added
+- **Configurable stream timeout.** `search`, `reason`, and `research` now accept `--timeout-ms <duration>`, with support for raw milliseconds plus `s` and `m` suffixes.
+
+### Changed
+- `pplx research` now defaults to a 10-minute stream timeout so Deep Research can finish instead of hitting the old 2-minute ceiling.
+- `pplx --version` now reads from `package.json`, keeping CLI output aligned with npm releases.
+
 ## [0.2.1] - 2026-05-18
 
 First public release worth telling people about. (v0.2.0 was unpublished before this release; do not use it.)
@@ -46,6 +55,7 @@ First public release worth telling people about. (v0.2.0 was unpublished before 
 - SSE streaming for real-time answers
 - Optional Playwright and Chrome CDP transports
 
+[0.2.2]: https://github.com/thatsrajan/pplx-cli/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/thatsrajan/pplx-cli/compare/v0.1.1...v0.2.1
 [0.1.1]: https://github.com/thatsrajan/pplx-cli/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/thatsrajan/pplx-cli/releases/tag/v0.1.0

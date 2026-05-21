@@ -127,6 +127,8 @@ pplx search "query" | head -1
 pplx search "query" --json || echo "failed"
 ```
 
+Deep Research is slower than normal search. `pplx research` defaults to a 10-minute stream timeout; override it per run with `--timeout-ms 600000`, `--timeout-ms 120s`, or `--timeout-ms 10m`.
+
 Recommended agent invocation:
 
 ```bash
@@ -160,6 +162,7 @@ pplx search "research this topic" --json --raw --mode pro
 | `--chrome` | Use Chrome CDP bridge instead of HTTP |
 | `--playwright` | Use Playwright headless Chromium |
 | `--no-playwright` | Force HTTP transport even if config enables Playwright |
+| `--timeout-ms 120000\|120s\|10m` | Overall stream timeout |
 | `--curl` | Force curl-impersonate (auto-downloads if missing) |
 | `--allow-anonymous` | Allow anonymous Perplexity responses when cookies are expired |
 | `--incognito` | Do not save the query to Perplexity history |

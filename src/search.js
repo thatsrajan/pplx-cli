@@ -126,6 +126,7 @@ async function* searchWithChrome(query, cookies, opts) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body,
+        timeout: opts.timeoutMs,
       }
     )) {
       parser.feed(chunk);
@@ -177,6 +178,7 @@ async function* searchWithPlaywright(query, cookies, opts) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body,
+        timeout: opts.timeoutMs,
       }
     )) {
       parser.feed(chunk);
@@ -219,6 +221,7 @@ async function* searchWithHttp(query, cookies, opts) {
       'cookie': cookieHeader(sessionCookies),
     },
     body,
+    timeout: opts.timeoutMs,
   });
 
   if (!resp.ok) {

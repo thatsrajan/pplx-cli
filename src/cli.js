@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { program } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -10,6 +11,9 @@ import { formatSources } from './format.js';
 import { LABS_MODELS, MODEL_MAP } from './constants.js';
 import { setUseCurl } from './http.js';
 import { loadConfig } from './config.js';
+import { resolveTimeoutMs } from './timeout.js';
+
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 // --- Output state ---
 let rawMode = false;
@@ -84,7 +88,7 @@ async function extractAndValidateBrowser(browser, profile) {
 program
   .name('pplx')
   .description('CLI for Perplexity AI')
-  .version('0.1.1');
+  .version(pkg.version);
 
 program.option('--verbose', 'Enable verbose logging');
 program.option('--proxy <url>', 'Set proxy URL (sets HTTPS_PROXY env var)');
@@ -274,6 +278,13 @@ async function doSearch(query, opts) {
   }
 
   const mode = opts.mode || 'pro';
+  let timeoutMs;
+  try {
+    timeoutMs = resolveTimeoutMs({ ...opts, mode });
+  } catch (e) {
+    console.error(chalk.red(e.message));
+    process.exit(1);
+  }
   const sources = opts.sources ? opts.sources.split(',') : ['web'];
   const lang = opts.lang || 'en-US';
 
@@ -291,6 +302,7 @@ async function doSearch(query, opts) {
       chrome: opts.chrome,
       playwright: opts.playwright,
       curl: opts.curl,
+      timeoutMs,
     })) {
       lastData = data;
 
@@ -361,6 +373,7 @@ program
   .option('--chrome', 'Use Chrome CDP bridge instead of HTTP')
   .option('--playwright', 'Use Playwright headless Chromium instead of HTTP')
   .option('--no-playwright', 'Disable Playwright even if config enables it')
+  .option('--timeout-ms <duration>', 'Overall stream timeout: milliseconds by default, or use 120s / 10m')
   .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired')
   .action(async (queryArg, opts) => {
     if (opts.raw) { rawMode = true; chalk.level = 0; }
@@ -378,6 +391,7 @@ program
   .option('--chrome', 'Use Chrome CDP bridge')
   .option('--playwright', 'Use Playwright headless Chromium')
   .option('--no-playwright', 'Disable Playwright even if config enables it')
+  .option('--timeout-ms <duration>', 'Overall stream timeout: milliseconds by default, or use 120s / 10m')
   .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired')
   .action(async (queryArg, opts) => {
     const query = await resolveQuery(queryArg);
@@ -393,6 +407,7 @@ program
   .option('--chrome', 'Use Chrome CDP bridge')
   .option('--playwright', 'Use Playwright headless Chromium')
   .option('--no-playwright', 'Disable Playwright even if config enables it')
+  .option('--timeout-ms <duration>', 'Overall stream timeout: milliseconds by default, or use 120s / 10m')
   .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired')
   .action(async (queryArg, opts) => {
     const query = await resolveQuery(queryArg);
