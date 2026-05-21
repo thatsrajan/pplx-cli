@@ -4,7 +4,7 @@
   "description": "CLI for Perplexity AI with cookie-based auth. Headless, agent-friendly, no API key required.",
   "type": "module",
   "bin": {
-    "pplx": "./bin/pplx.js"
+    "pplx": "bin/pplx.js"
   },
   "scripts": {
     "start": "node bin/pplx.js",
