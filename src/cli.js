@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { isAbsolute, join, resolve } from 'node:path';
 import { program } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -12,6 +13,15 @@ import { LABS_MODELS, MODEL_MAP } from './constants.js';
 import { setUseCurl } from './http.js';
 import { loadConfig } from './config.js';
 import { resolveTimeoutMs } from './timeout.js';
+import { makeArtifactContext, resolveArtifactDir, writeStandardArtifact } from './artifacts.js';
+import {
+  createComputerRun,
+  copyTextToClipboard,
+  importComputerResult,
+  inspectComputerRun,
+  openComputerUrl,
+  readTaskFile,
+} from './computer.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -93,6 +103,9 @@ program
 program.option('--verbose', 'Enable verbose logging');
 program.option('--proxy <url>', 'Set proxy URL (sets HTTPS_PROXY env var)');
 program.option('--raw', 'Plain text output, no colors, no spinner');
+program.option('--out <dir>', 'Directory for saved artifacts');
+program.option('--no-artifact', 'Disable artifact saving for this run');
+program.option('--artifact-id <id>', 'Deterministic artifact id for this run');
 
 program.hook('preAction', (thisCmd) => {
   const gopts = thisCmd.optsWithGlobals ? thisCmd.optsWithGlobals() : thisCmd.opts();
@@ -106,6 +119,35 @@ program.hook('preAction', (thisCmd) => {
     chalk.level = 0;
   }
 });
+
+function getOpts(commandOrOpts) {
+  const globals = program.opts();
+  const locals = commandOrOpts.optsWithGlobals
+    ? { ...commandOrOpts.optsWithGlobals(), ...commandOrOpts.opts() }
+    : commandOrOpts;
+  const merged = { ...globals, ...locals };
+  if (globals.artifact === false || locals.artifact === false) merged.artifact = false;
+  return merged;
+}
+
+function addArtifactOptions(command, { allowDisable = true } = {}) {
+  command
+    .option('--out <dir>', 'Directory for saved artifacts')
+    .option('--artifact-id <id>', 'Deterministic artifact id for this run');
+  if (allowDisable) command.option('--no-artifact', 'Disable artifact saving for this run');
+  return command;
+}
+
+function maybePrintArtifactInfo(info, opts) {
+  if (!info || opts.json || rawMode) return;
+  console.log(chalk.dim(`\nArtifact: ${info.artifactDir}`));
+}
+
+function resolveRunDir(runId, opts = {}) {
+  if (isAbsolute(runId) || runId.includes('/')) return resolve(runId);
+  const cfg = loadConfig();
+  return join(resolveArtifactDir({ out: opts.out, config: cfg }), runId);
+}
 
 // Auth command
 program
@@ -259,9 +301,9 @@ program
   });
 
 // Shared search logic
-async function doSearch(query, opts) {
+async function doSearch(query, opts, commandName = 'search') {
   const cfg = loadConfig();
-  opts = { ...cfg, ...opts };
+  opts = { ...cfg, ...getOpts(opts) };
   if (opts.curl) setUseCurl(true);
 
   const cookies = loadCookies() || {};
@@ -287,6 +329,13 @@ async function doSearch(query, opts) {
   }
   const sources = opts.sources ? opts.sources.split(',') : ['web'];
   const lang = opts.lang || 'en-US';
+  let artifactCtx = null;
+  try {
+    artifactCtx = makeArtifactContext({ command: commandName, query, opts, config: cfg });
+  } catch (e) {
+    console.error(chalk.red(e.message));
+    process.exit(1);
+  }
 
   try {
     let lastAnswer = '';
@@ -325,12 +374,21 @@ async function doSearch(query, opts) {
       // Output single final JSON object
       const answer = lastData?.answer || lastAnswer || '';
       const webResults = lastData?.web_results || [];
+      const normalizedSources = webResults.map(r => ({ title: r.name || r.title, url: r.url }));
+      const artifactInfo = writeStandardArtifact(artifactCtx, {
+        answer,
+        sources: normalizedSources,
+        mode,
+        model: opts.model || 'default',
+      });
       const jsonOut = {
         answer,
-        sources: webResults.map(r => ({ title: r.name || r.title, url: r.url })),
+        sources: normalizedSources,
         query,
         mode,
         model: opts.model || 'default',
+        artifactDir: artifactInfo?.artifactDir,
+        artifactId: artifactInfo?.artifactId,
       };
       console.log(JSON.stringify(jsonOut));
       if (!answer) process.exit(1);
@@ -347,6 +405,14 @@ async function doSearch(query, opts) {
     if (!rawMode && opts.citations !== false && lastData?.web_results) {
       console.log(formatSources(lastData.web_results, { full: opts.citationsFull }));
     }
+    const webResults = lastData?.web_results || [];
+    const artifactInfo = writeStandardArtifact(artifactCtx, {
+      answer: lastAnswer,
+      sources: webResults.map(r => ({ title: r.name || r.title, url: r.url })),
+      mode,
+      model: opts.model || 'default',
+    });
+    maybePrintArtifactInfo(artifactInfo, opts);
   } catch (e) {
     console.error(chalk.red('\nError:'), e.message);
     if (e.message.includes('403')) {
@@ -357,7 +423,7 @@ async function doSearch(query, opts) {
 }
 
 // Search command
-program
+addArtifactOptions(program
   .command('search [query]')
   .description('Search with Perplexity (default: pro mode)')
   .option('-m, --mode <mode>', 'Search mode: auto, pro, reasoning, deep-research', 'pro')
@@ -374,15 +440,16 @@ program
   .option('--playwright', 'Use Playwright headless Chromium instead of HTTP')
   .option('--no-playwright', 'Disable Playwright even if config enables it')
   .option('--timeout-ms <duration>', 'Overall stream timeout: milliseconds by default, or use 120s / 10m')
-  .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired')
+  .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired'))
   .action(async (queryArg, opts) => {
+    opts = getOpts(opts);
     if (opts.raw) { rawMode = true; chalk.level = 0; }
     const query = await resolveQuery(queryArg);
-    await doSearch(query, opts);
+    await doSearch(query, opts, 'search');
   });
 
 // Shorthand: reason
-program
+addArtifactOptions(program
   .command('reason [query]')
   .description('Reasoning mode search')
   .option('--model <model>', 'Model name')
@@ -392,14 +459,15 @@ program
   .option('--playwright', 'Use Playwright headless Chromium')
   .option('--no-playwright', 'Disable Playwright even if config enables it')
   .option('--timeout-ms <duration>', 'Overall stream timeout: milliseconds by default, or use 120s / 10m')
-  .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired')
+  .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired'))
   .action(async (queryArg, opts) => {
+    opts = getOpts(opts);
     const query = await resolveQuery(queryArg);
-    await doSearch(query, { ...opts, mode: 'reasoning' });
+    await doSearch(query, { ...opts, mode: 'reasoning' }, 'reason');
   });
 
 // Shorthand: research
-program
+addArtifactOptions(program
   .command('research [query]')
   .description('Deep research mode')
   .option('--json', 'Output raw JSON')
@@ -408,12 +476,13 @@ program
   .option('--playwright', 'Use Playwright headless Chromium')
   .option('--no-playwright', 'Disable Playwright even if config enables it')
   .option('--timeout-ms <duration>', 'Overall stream timeout: milliseconds by default, or use 120s / 10m')
-  .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired')
+  .option('--allow-anonymous', 'Allow anonymous Perplexity responses when cookies are expired'))
   .action(async (queryArg, opts) => {
+    opts = getOpts(opts);
     const query = await resolveQuery(queryArg);
     const spinner = makeSpinner('Deep research in progress...').start();
     try {
-      await doSearch(query, { ...opts, mode: 'deep-research', _spinner: spinner });
+      await doSearch(query, { ...opts, mode: 'deep-research', _spinner: spinner }, 'research');
     } catch (e) {
       spinner.fail(e.message);
       process.exit(1);
@@ -421,13 +490,22 @@ program
   });
 
 // Labs command
-program
+addArtifactOptions(program
   .command('labs [query]')
   .description('Query open-source models (no auth needed)')
   .option('--model <model>', `Model: ${LABS_MODELS.join(', ')}`, 'sonar')
-  .option('--json', 'Output raw JSON')
+  .option('--json', 'Output single JSON object with answer, events, and artifact metadata'))
   .action(async (queryArg, opts) => {
+    opts = getOpts(opts);
+    const cfg = loadConfig();
     const query = await resolveQuery(queryArg);
+    let artifactCtx = null;
+    try {
+      artifactCtx = makeArtifactContext({ command: 'labs', query, opts, config: cfg });
+    } catch (e) {
+      console.error(chalk.red(e.message));
+      process.exit(1);
+    }
     const spinner = makeSpinner('Connecting to labs...').start();
     const client = new LabsClient();
     try {
@@ -435,9 +513,10 @@ program
       spinner.stop();
 
       let lastOutput = '';
+      const events = [];
       for await (const data of client.ask(query, opts.model)) {
+        events.push(data);
         if (opts.json) {
-          console.log(JSON.stringify(data));
           continue;
         }
         const output = data.output || '';
@@ -447,11 +526,126 @@ program
         }
       }
       if (!opts.json) process.stdout.write('\n');
+      const artifactInfo = writeStandardArtifact(artifactCtx, {
+        answer: lastOutput,
+        sources: [],
+        mode: 'labs',
+        model: opts.model,
+      });
+      if (opts.json) {
+        console.log(JSON.stringify({
+          answer: lastOutput,
+          events,
+          query,
+          mode: 'labs',
+          model: opts.model,
+          artifactDir: artifactInfo?.artifactDir,
+          artifactId: artifactInfo?.artifactId,
+        }));
+      } else {
+        maybePrintArtifactInfo(artifactInfo, opts);
+      }
     } catch (e) {
       spinner.fail('Labs error: ' + e.message);
+      if (isQuiet()) console.error(chalk.red('Labs error:'), e.message);
       process.exit(1);
     } finally {
       client.close();
+    }
+  });
+
+// Computer artifact handoff workflow
+const computer = program
+  .command('computer')
+  .description('Create and manage Perplexity Computer artifact handoffs');
+
+addArtifactOptions(computer
+  .command('new [task]')
+  .description('Create a Perplexity Computer task artifact')
+  .option('--template <name>', 'Computer task template', 'compare')
+  .option('--json', 'Output run metadata as JSON'), { allowDisable: false })
+  .action(async (taskArg, opts) => {
+    opts = getOpts(opts);
+    const task = await resolveQuery(taskArg);
+    try {
+      const run = createComputerRun({
+        task,
+        template: opts.template,
+        opts,
+        config: loadConfig(),
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(run));
+        return;
+      }
+      console.log(chalk.green(`✓ Computer task artifact created: ${run.artifactDir}`));
+      console.log(chalk.dim(`  Task: ${run.taskPath}`));
+      console.log(chalk.dim(`  Result: ${run.resultPath}`));
+    } catch (e) {
+      console.error(chalk.red(e.message));
+      process.exit(1);
+    }
+  });
+
+addArtifactOptions(computer
+  .command('open <run>')
+  .description('Open Perplexity Computer and optionally copy task.md')
+  .option('--copy', 'Copy task.md to the clipboard'), { allowDisable: false })
+  .action((runId, opts) => {
+    opts = getOpts(opts);
+    const runDir = resolveRunDir(runId, opts);
+    try {
+      if (opts.copy) {
+        const taskText = readTaskFile(runDir);
+        if (!copyTextToClipboard(taskText)) {
+          console.log(chalk.yellow('Clipboard copy is only supported on macOS.'));
+        }
+      }
+      if (!openComputerUrl()) {
+        console.log(chalk.yellow('Opening Perplexity Computer is only supported on macOS.'));
+        console.log('https://www.perplexity.ai/computer');
+        return;
+      }
+      console.log(chalk.green(`✓ Opened Perplexity Computer for ${runDir}`));
+      if (opts.copy) console.log(chalk.dim('  Copied task.md to clipboard.'));
+    } catch (e) {
+      console.error(chalk.red(e.message));
+      process.exit(1);
+    }
+  });
+
+addArtifactOptions(computer
+  .command('status <run>')
+  .description('Inspect a Perplexity Computer artifact run')
+  .option('--json', 'Output status as JSON'), { allowDisable: false })
+  .action((runId, opts) => {
+    opts = getOpts(opts);
+    const status = inspectComputerRun(resolveRunDir(runId, opts));
+    if (opts.json) {
+      console.log(JSON.stringify(status));
+      return;
+    }
+    const label = status.status === 'complete'
+      ? chalk.green('[✓] Complete')
+      : status.status === 'pending'
+        ? chalk.yellow('[○] Pending')
+        : chalk.red(status.status === 'invalid' ? '[!] Invalid' : '[✗] Missing');
+    console.log(`${label} ${status.artifactDir}`);
+    if (status.reason) console.log(chalk.dim(`  ${status.reason}`));
+  });
+
+addArtifactOptions(computer
+  .command('import <run>')
+  .description('Print a completed Perplexity Computer result')
+  .option('--json', 'Output compact JSON'), { allowDisable: false })
+  .action((runId, opts) => {
+    opts = getOpts(opts);
+    try {
+      const result = importComputerResult(resolveRunDir(runId, opts));
+      console.log(opts.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
+    } catch (e) {
+      console.error(chalk.red(e.message));
+      process.exit(1);
     }
   });
 
@@ -472,9 +666,9 @@ program
 // Default: treat bare args as search
 program
   .argument('[query...]', 'Quick search (shorthand for pplx search)')
-  .action(async (query) => {
+  .action(async (query, opts) => {
     if (query.length > 0) {
-      await doSearch(query.join(' '), {});
+      await doSearch(query.join(' '), getOpts(opts || program), 'search');
     }
   });
 

@@ -101,6 +101,7 @@ pplx search "what is quantum computing"
 pplx reason "explain the Riemann hypothesis"
 pplx research "compare React vs Vue in 2026"
 pplx labs "hello world"          # free, no auth needed
+pplx computer new "compare dinner options nearby"
 pplx models                       # list available models
 ```
 
@@ -145,9 +146,43 @@ pplx search "research this topic" --json --raw --mode pro
   ],
   "query": "...",
   "mode": "pro",
-  "model": "..."
+  "model": "...",
+  "artifactDir": "/Users/you/.config/pplx/artifacts/...",
+  "artifactId": "..."
 }
 ```
+
+---
+
+## Artifacts
+
+Query-producing commands save artifacts by default:
+
+- `pplx search`
+- `pplx reason`
+- `pplx research`
+- `pplx labs`
+- bare `pplx "query"`
+- `pplx computer new`
+
+Each run gets a folder containing `meta.json`, `query.txt`, `answer.md`, `result.json`, and `sources.json`. Use `--out <dir>` to choose the destination for one run, or set `"artifactDir"` in `~/.config/pplx/config.json` to make it persistent. Use `--artifact-id <id>` when an agent needs a deterministic run folder, and `--no-artifact` to disable saving for one search-style run.
+
+```bash
+pplx search "compare laptops under $1500" --out ~/Dropbox/pplx-runs
+pplx research "best places to stay in Kyoto" --artifact-id kyoto-research
+pplx search "what is 2+2" --no-artifact --json --raw
+```
+
+`pplx computer` is an artifact handoff for Perplexity Computer. It creates a task prompt and a result contract without calling private Computer APIs:
+
+```bash
+pplx computer new "compare dinner options nearby" --out ~/Dropbox/pplx-runs
+pplx computer open <run-id> --copy
+pplx computer status <run-id> --out ~/Dropbox/pplx-runs
+pplx computer import <run-id> --out ~/Dropbox/pplx-runs --json
+```
+
+Computer runs include `task.md`, `result.schema.json`, and `computer-result.json`. Paste `task.md` into Perplexity Computer; when the task is done, place the structured result in `computer-result.json` so local agents can read it.
 
 ---
 
@@ -163,6 +198,9 @@ pplx search "research this topic" --json --raw --mode pro
 | `--playwright` | Use Playwright headless Chromium |
 | `--no-playwright` | Force HTTP transport even if config enables Playwright |
 | `--timeout-ms 120000\|120s\|10m` | Overall stream timeout |
+| `--out <dir>` | Directory for saved artifacts |
+| `--artifact-id <id>` | Deterministic artifact id for this run |
+| `--no-artifact` | Disable artifact saving for one search-style run |
 | `--curl` | Force curl-impersonate (auto-downloads if missing) |
 | `--allow-anonymous` | Allow anonymous Perplexity responses when cookies are expired |
 | `--incognito` | Do not save the query to Perplexity history |
@@ -193,7 +231,8 @@ Optional config file at `~/.config/pplx/config.json`:
   "model": "claude-3.5-sonnet",
   "lang": "en-US",
   "playwright": true,
-  "playwrightHeadless": false
+  "playwrightHeadless": false,
+  "artifactDir": "/Users/you/Dropbox/pplx-runs"
 }
 ```
 

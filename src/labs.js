@@ -45,6 +45,9 @@ export class LabsClient {
       headers: { 'user-agent': HEADERS['user-agent'] },
     });
     const pollText = await pollResp.text();
+    if (!pollResp.ok) {
+      throw new Error(`Labs polling failed (${pollResp.status}): ${pollText.slice(0, 120)}`);
+    }
 
     const handshake = parseEngineIO(pollText);
     this.sid = handshake.sid;
