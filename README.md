@@ -152,6 +152,42 @@ pplx search "research this topic" --json --raw --mode pro
 }
 ```
 
+### MCP Server
+
+`pplx-mcp` exposes the same Perplexity workflow through a local stdio MCP server for Claude Desktop, Claude Code, Codex, and other MCP clients.
+
+```bash
+pplx-mcp
+```
+
+Typical global client registrations:
+
+```bash
+claude mcp add --scope user pplx -- /path/to/node /path/to/pplx-mcp
+codex mcp add pplx -- /path/to/node /path/to/pplx-mcp
+```
+
+For Claude Desktop, add the server under `mcpServers` in `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "pplx": {
+      "command": "/path/to/node",
+      "args": ["/path/to/pplx-mcp"]
+    }
+  }
+}
+```
+
+The MCP server exposes:
+
+- `pplx_search`: authenticated `search`, `reasoning`, and `deep-research` queries with sources and artifacts.
+- `pplx_labs`: Labs model queries that do not require cookie auth.
+- `pplx_auth_status`: validates the stored Perplexity browser cookies.
+- `pplx_models`: lists known model aliases.
+- `pplx_computer_create`, `pplx_computer_status`, `pplx_computer_read_task`, and `pplx_computer_import`: Perplexity Computer artifact handoff tools.
+
 ---
 
 ## Artifacts
