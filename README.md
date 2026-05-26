@@ -102,6 +102,7 @@ pplx reason "explain the Riemann hypothesis"
 pplx research "compare React vs Vue in 2026"
 pplx labs "hello world"          # free, no auth needed
 pplx computer new "compare dinner options nearby"
+pplx council new "critique the competitive threat from Acme in enterprise search"
 pplx models                       # list available models
 ```
 
@@ -187,6 +188,7 @@ The MCP server exposes:
 - `pplx_auth_status`: validates the stored Perplexity browser cookies.
 - `pplx_models`: lists known model aliases.
 - `pplx_computer_create`, `pplx_computer_status`, `pplx_computer_read_task`, and `pplx_computer_import`: Perplexity Computer artifact handoff tools.
+- `pplx_council_create`, `pplx_council_status`, `pplx_council_read_task`, and `pplx_council_import`: Perplexity Model Council artifact handoff tools.
 
 ---
 
@@ -200,6 +202,7 @@ Query-producing commands save artifacts by default:
 - `pplx labs`
 - bare `pplx "query"`
 - `pplx computer new`
+- `pplx council new`
 
 Each run gets a folder containing `meta.json`, `query.txt`, `answer.md`, `result.json`, and `sources.json`. Use `--out <dir>` to choose the destination for one run, or set `"artifactDir"` in `~/.config/pplx/config.json` to make it persistent. Use `--artifact-id <id>` when an agent needs a deterministic run folder, and `--no-artifact` to disable saving for one search-style run.
 
@@ -219,6 +222,18 @@ pplx computer import <run-id> --out ~/Dropbox/pplx-runs --json
 ```
 
 Computer runs include `task.md`, `result.schema.json`, and `computer-result.json`. Paste `task.md` into Perplexity Computer; when the task is done, place the structured result in `computer-result.json` so local agents can read it.
+
+`pplx council` is an artifact handoff for Perplexity Model Council. It requires Model Council access in the Perplexity web UI and creates a task prompt plus result contract without claiming a private Council API:
+
+```bash
+pplx council new "critique the competitive threat from Acme in enterprise search" --out ~/Dropbox/pplx-runs
+pplx council new "review this evidence" --evidence ~/Dropbox/pplx-runs/acme/computer-result.json
+pplx council open <run-id> --copy
+pplx council status <run-id> --out ~/Dropbox/pplx-runs
+pplx council import <run-id> --out ~/Dropbox/pplx-runs --json
+```
+
+Council runs include `task.md`, `result.schema.json`, and `council-result.json`. Paste `task.md` into Perplexity Model Council; when the review is done, place the structured result in `council-result.json` so local agents can read it.
 
 ---
 

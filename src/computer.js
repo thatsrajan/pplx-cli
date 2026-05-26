@@ -10,6 +10,7 @@ import {
 
 export const COMPUTER_URL = 'https://www.perplexity.ai/computer';
 export const COMPUTER_RESULT_FILE = 'computer-result.json';
+export const COMPUTER_TEMPLATES = ['compare', 'competitive-analysis'];
 export const PENDING_COMPUTER_RESULT = {
   summary: '',
   winner: '',
@@ -18,6 +19,7 @@ export const PENDING_COMPUTER_RESULT = {
   sources: [],
   checked_at: '',
   notes: [],
+  council_review_prompt: '',
   _status: 'pending',
 };
 
@@ -34,14 +36,11 @@ const RESULT_SCHEMA = {
     sources: { type: 'array' },
     checked_at: { type: 'string' },
     notes: { type: 'array' },
+    council_review_prompt: { type: 'string' },
   },
 };
 
-export function buildComputerTask({ task, template = 'compare', resultPath }) {
-  if (template !== 'compare') {
-    throw new Error(`unsupported computer template: ${template}`);
-  }
-
+function buildCompareTask({ task, resultPath }) {
   return `# Perplexity Computer Task
 
 You are running a live comparison task for a local agent workflow.
@@ -70,6 +69,60 @@ If you can access the local filesystem, save it here:
 
 If you cannot access the filesystem, return the JSON in the chat so the local agent or user can place it in that file.
 `;
+}
+
+function buildCompetitiveAnalysisTask({ task, resultPath }) {
+  return `# Perplexity Computer Task
+
+You are running a live competitive-analysis task for a local agent workflow.
+
+## User request
+
+${task}
+
+## Instructions
+
+- Treat this as "one competitor or competitor set" plus "one topic, market, product surface, capability, pricing motion, GTM motion, or customer segment."
+- Use live web pages and direct source pages where possible, not only search snippets.
+- Check competitor-owned pages first: home page, product docs, pricing, changelog, blog, help center, release notes, status pages, public roadmaps, job postings, and app marketplace listings.
+- Add independent evidence where useful: customer reviews, forum threads, analyst commentary, news, benchmark posts, partner pages, search ads, and social posts.
+- Preserve source URLs for every material claim.
+- Separate facts from interpretation.
+- Identify:
+  - current positioning
+  - recent changes or launches
+  - pricing and packaging implications
+  - GTM and distribution signals
+  - customer pain or praise signals
+  - likely strategic intent
+  - threat level to the user request's context
+  - evidence gaps that need follow-up
+- Include the time the information was checked.
+- Mark uncertainty explicitly. Do not invent missing values.
+- Prefer structured evidence over prose.
+- Include \`council_review_prompt\`: a concise prompt that can be pasted into Perplexity Model Council to critique the evidence and strategy read.
+
+## Output target
+
+Write the final result as JSON matching \`result.schema.json\`.
+
+If you can access the local filesystem, save it here:
+
+\`${resultPath}\`
+
+If you cannot access the filesystem, return the JSON in the chat so the local agent or user can place it in that file.
+`;
+}
+
+export function buildComputerTask({ task, template = 'compare', resultPath }) {
+  if (!COMPUTER_TEMPLATES.includes(template)) {
+    throw new Error(`unsupported computer template: ${template}`);
+  }
+
+  if (template === 'competitive-analysis') {
+    return buildCompetitiveAnalysisTask({ task, resultPath });
+  }
+  return buildCompareTask({ task, resultPath });
 }
 
 export function createComputerRun({ task, template = 'compare', opts = {}, config = {} }) {

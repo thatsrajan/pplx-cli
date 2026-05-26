@@ -5,6 +5,12 @@ All notable changes to pplx-cli will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-05-26
+
+### Added
+- **Perplexity Model Council handoff.** Added `pplx council` artifact workflows plus MCP tools for creating, reading, checking, and importing Model Council review runs.
+- **Competitive-analysis template.** Added a `competitive-analysis` Perplexity Computer template that produces evidence briefs with a Council review prompt.
+
 ## [0.3.2] - 2026-05-26
 
 ### Added
@@ -73,6 +79,7 @@ First public release worth telling people about. (v0.2.0 was unpublished before 
 - SSE streaming for real-time answers
 - Optional Playwright and Chrome CDP transports
 
+[0.3.3]: https://github.com/thatsrajan/pplx-cli/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/thatsrajan/pplx-cli/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/thatsrajan/pplx-cli/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/thatsrajan/pplx-cli/compare/v0.2.2...v0.3.0

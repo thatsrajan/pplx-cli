@@ -21,6 +21,17 @@ describe('computer artifact workflow', () => {
     assert.match(prompt, /\/tmp\/result\.json/);
   });
 
+  it('builds a competitive-analysis task prompt with a Council handoff', () => {
+    const prompt = buildComputerTask({
+      task: 'analyze Competitor A pricing for enterprise search',
+      template: 'competitive-analysis',
+      resultPath: '/tmp/result.json',
+    });
+    assert.match(prompt, /competitive-analysis task/);
+    assert.match(prompt, /competitor-owned pages/);
+    assert.match(prompt, /council_review_prompt/);
+  });
+
   it('creates a computer run folder with handoff files', () => {
     const root = mkdtempSync(join(tmpdir(), 'pplx-computer-'));
     const run = createComputerRun({

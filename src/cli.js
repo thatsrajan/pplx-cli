@@ -15,6 +15,7 @@ import { loadConfig } from './config.js';
 import { resolveTimeoutMs } from './timeout.js';
 import { makeArtifactContext, resolveArtifactDir, writeStandardArtifact } from './artifacts.js';
 import {
+  COMPUTER_TEMPLATES,
   createComputerRun,
   copyTextToClipboard,
   importComputerResult,
@@ -22,6 +23,14 @@ import {
   openComputerUrl,
   readTaskFile,
 } from './computer.js';
+import {
+  COUNCIL_TEMPLATES,
+  copyCouncilTaskToClipboard,
+  createCouncilRun,
+  importCouncilResult,
+  inspectCouncilRun,
+  openCouncilUrl,
+} from './council.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -562,7 +571,7 @@ const computer = program
 addArtifactOptions(computer
   .command('new [task]')
   .description('Create a Perplexity Computer task artifact')
-  .option('--template <name>', 'Computer task template', 'compare')
+  .option('--template <name>', `Computer task template: ${COMPUTER_TEMPLATES.join(', ')}`, 'compare')
   .option('--json', 'Output run metadata as JSON'), { allowDisable: false })
   .action(async (taskArg, opts) => {
     opts = getOpts(opts);
@@ -642,6 +651,100 @@ addArtifactOptions(computer
     opts = getOpts(opts);
     try {
       const result = importComputerResult(resolveRunDir(runId, opts));
+      console.log(opts.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
+    } catch (e) {
+      console.error(chalk.red(e.message));
+      process.exit(1);
+    }
+  });
+
+// Council artifact handoff workflow
+const council = program
+  .command('council')
+  .description('Create and manage Perplexity Model Council artifact handoffs');
+
+addArtifactOptions(council
+  .command('new [task]')
+  .description('Create a Perplexity Model Council task artifact')
+  .option('--template <name>', `Council task template: ${COUNCIL_TEMPLATES.join(', ')}`, 'competitive-analysis')
+  .option('--evidence <path>', 'Optional local evidence artifact path to reference in the Council task')
+  .option('--json', 'Output run metadata as JSON'), { allowDisable: false })
+  .action(async (taskArg, opts) => {
+    opts = getOpts(opts);
+    const task = await resolveQuery(taskArg);
+    try {
+      const run = createCouncilRun({
+        task,
+        template: opts.template,
+        evidencePath: opts.evidence,
+        opts,
+        config: loadConfig(),
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(run));
+        return;
+      }
+      console.log(chalk.green(`✓ Council task artifact created: ${run.artifactDir}`));
+      console.log(chalk.dim(`  Task: ${run.taskPath}`));
+      console.log(chalk.dim(`  Result: ${run.resultPath}`));
+    } catch (e) {
+      console.error(chalk.red(e.message));
+      process.exit(1);
+    }
+  });
+
+addArtifactOptions(council
+  .command('open <run>')
+  .description('Open Perplexity and optionally copy task.md for Model Council')
+  .option('--copy', 'Copy task.md to the clipboard'), { allowDisable: false })
+  .action((runId, opts) => {
+    opts = getOpts(opts);
+    const runDir = resolveRunDir(runId, opts);
+    try {
+      if (opts.copy && !copyCouncilTaskToClipboard(runDir)) {
+        console.log(chalk.yellow('Clipboard copy is only supported on macOS.'));
+      }
+      if (!openCouncilUrl()) {
+        console.log(chalk.yellow('Opening Perplexity is only supported on macOS.'));
+        console.log('https://www.perplexity.ai/');
+        return;
+      }
+      console.log(chalk.green(`✓ Opened Perplexity for ${runDir}`));
+      if (opts.copy) console.log(chalk.dim('  Copied task.md to clipboard.'));
+    } catch (e) {
+      console.error(chalk.red(e.message));
+      process.exit(1);
+    }
+  });
+
+addArtifactOptions(council
+  .command('status <run>')
+  .description('Inspect a Perplexity Model Council artifact run')
+  .option('--json', 'Output status as JSON'), { allowDisable: false })
+  .action((runId, opts) => {
+    opts = getOpts(opts);
+    const status = inspectCouncilRun(resolveRunDir(runId, opts));
+    if (opts.json) {
+      console.log(JSON.stringify(status));
+      return;
+    }
+    const label = status.status === 'complete'
+      ? chalk.green('[✓] Complete')
+      : status.status === 'pending'
+        ? chalk.yellow('[○] Pending')
+        : chalk.red(status.status === 'invalid' ? '[!] Invalid' : '[✗] Missing');
+    console.log(`${label} ${status.artifactDir}`);
+    if (status.reason) console.log(chalk.dim(`  ${status.reason}`));
+  });
+
+addArtifactOptions(council
+  .command('import <run>')
+  .description('Print a completed Perplexity Model Council result')
+  .option('--json', 'Output compact JSON'), { allowDisable: false })
+  .action((runId, opts) => {
+    opts = getOpts(opts);
+    try {
+      const result = importCouncilResult(resolveRunDir(runId, opts));
       console.log(opts.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
     } catch (e) {
       console.error(chalk.red(e.message));

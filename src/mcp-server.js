@@ -11,11 +11,19 @@ import { LabsClient } from './labs.js';
 import { resolveTimeoutMs } from './timeout.js';
 import { makeArtifactContext, resolveArtifactDir, writeStandardArtifact } from './artifacts.js';
 import {
+  COMPUTER_TEMPLATES,
   createComputerRun,
   importComputerResult,
   inspectComputerRun,
   readTaskFile,
 } from './computer.js';
+import {
+  COUNCIL_TEMPLATES,
+  createCouncilRun,
+  importCouncilResult,
+  inspectCouncilRun,
+  readCouncilTaskFile,
+} from './council.js';
 import { MODEL_MAP, LABS_MODELS } from './constants.js';
 
 const SERVER_NAME = 'pplx';
@@ -271,7 +279,7 @@ export function createPplxMcpServer() {
     description: 'Create a Perplexity Computer artifact handoff folder containing task.md, result.schema.json, and computer-result.json.',
     inputSchema: {
       task: z.string().min(1).describe('Live web task for Perplexity Computer.'),
-      template: z.literal('compare').optional().default('compare').describe('Computer task template.'),
+      template: z.enum(COMPUTER_TEMPLATES).optional().default('compare').describe('Computer task template.'),
       out: z.string().optional().describe('Artifact root for this run.'),
       artifactId: z.string().optional().describe('Deterministic artifact id for this run.'),
     },
@@ -288,6 +296,83 @@ export function createPplxMcpServer() {
       config: loadConfig(),
     });
     return toTextResult(run);
+  });
+
+  server.registerTool('pplx_council_create', {
+    title: 'Create Perplexity Model Council Handoff',
+    description: 'Create a Perplexity Model Council artifact handoff folder containing task.md, result.schema.json, and council-result.json.',
+    inputSchema: {
+      task: z.string().min(1).describe('Judgment, strategy, or competitive-analysis task for Model Council.'),
+      template: z.enum(COUNCIL_TEMPLATES).optional().default('competitive-analysis').describe('Council task template.'),
+      evidencePath: z.string().optional().describe('Optional local evidence artifact path to reference in the Council task.'),
+      out: z.string().optional().describe('Artifact root for this run.'),
+      artifactId: z.string().optional().describe('Deterministic artifact id for this run.'),
+    },
+    annotations: {
+      title: 'Create Perplexity Model Council Handoff',
+      readOnlyHint: false,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    const run = createCouncilRun({
+      task: args.task,
+      template: args.template || 'competitive-analysis',
+      evidencePath: args.evidencePath,
+      opts: { out: args.out, artifactId: args.artifactId },
+      config: loadConfig(),
+    });
+    return toTextResult(run);
+  });
+
+  server.registerTool('pplx_council_status', {
+    title: 'Perplexity Model Council Status',
+    description: 'Inspect a Perplexity Model Council artifact run.',
+    inputSchema: {
+      run: z.string().min(1).describe('Run id or absolute run folder path.'),
+      out: z.string().optional().describe('Artifact root used when run is an id.'),
+    },
+    annotations: {
+      title: 'Perplexity Model Council Status',
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    const runDir = resolveRunDir(args.run, args.out, loadConfig());
+    return toTextResult(inspectCouncilRun(runDir));
+  });
+
+  server.registerTool('pplx_council_import', {
+    title: 'Import Perplexity Model Council Result',
+    description: 'Read and validate a completed council-result.json from a Perplexity Model Council artifact run.',
+    inputSchema: {
+      run: z.string().min(1).describe('Run id or absolute run folder path.'),
+      out: z.string().optional().describe('Artifact root used when run is an id.'),
+    },
+    annotations: {
+      title: 'Import Perplexity Model Council Result',
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    const runDir = resolveRunDir(args.run, args.out, loadConfig());
+    return toTextResult(importCouncilResult(runDir));
+  });
+
+  server.registerTool('pplx_council_read_task', {
+    title: 'Read Perplexity Model Council Task',
+    description: 'Read the task.md prompt from a Perplexity Model Council artifact run.',
+    inputSchema: {
+      run: z.string().min(1).describe('Run id or absolute run folder path.'),
+      out: z.string().optional().describe('Artifact root used when run is an id.'),
+    },
+    annotations: {
+      title: 'Read Perplexity Model Council Task',
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    const runDir = resolveRunDir(args.run, args.out, loadConfig());
+    return toTextResult({ runDir, task: readCouncilTaskFile(runDir) });
   });
 
   server.registerTool('pplx_computer_status', {

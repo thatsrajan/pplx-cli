@@ -28,6 +28,10 @@ describe('pplx MCP server', () => {
         'pplx_computer_import',
         'pplx_computer_read_task',
         'pplx_computer_status',
+        'pplx_council_create',
+        'pplx_council_import',
+        'pplx_council_read_task',
+        'pplx_council_status',
         'pplx_labs',
         'pplx_models',
         'pplx_search',
@@ -68,6 +72,31 @@ describe('pplx MCP server', () => {
         arguments: { run: 'dinner-options', out: root },
       });
       assert.match(task.structuredContent.task, /compare dinner options nearby/);
+
+      const council = await client.callTool({
+        name: 'pplx_council_create',
+        arguments: {
+          task: 'review the dinner-options evidence',
+          evidencePath: join(root, 'dinner-options', 'computer-result.json'),
+          out: root,
+          artifactId: 'dinner-council',
+        },
+      });
+      assert.equal(council.structuredContent.artifactId, 'dinner-council');
+      assert.equal(existsSync(join(root, 'dinner-council', 'task.md')), true);
+
+      const councilStatus = await client.callTool({
+        name: 'pplx_council_status',
+        arguments: { run: 'dinner-council', out: root },
+      });
+      assert.equal(councilStatus.structuredContent.status, 'pending');
+
+      const councilTask = await client.callTool({
+        name: 'pplx_council_read_task',
+        arguments: { run: 'dinner-council', out: root },
+      });
+      assert.match(councilTask.structuredContent.task, /review the dinner-options evidence/);
+      assert.match(councilTask.structuredContent.task, /computer-result\.json/);
     } finally {
       await clientTransport.close();
       await serverTransport.close();
